@@ -1,11 +1,17 @@
 ---
 name: skill-creator
-description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
+description: Create or improve skills, especially when the user requests comparative execution evals, benchmark analysis, or description routing optimization. For focused authoring in Codex, prefer the bundled skill-creator when available; use this workflow for its evaluation tools when they add value.
 ---
 
 # Skill Creator
 
 A skill for creating new skills and iteratively improving them.
+
+## Choose The Needed Work
+
+Use the conversation and existing artifacts to establish intent. For a focused correction, edit and run relevant structural or behavioral checks, then deliver. For a new or substantially changed workflow, use realistic cases that exercise its decisions. Use the full paired benchmark and viewer workflow below when the user requests comparison or the change's uncertainty justifies it; it is not a prerequisite for every skill edit. Package only when distribution is requested.
+
+Existing authorization covers the requested authoring and ordinary validation. Ask only for a material missing decision or additional side effects, not for permission to advance each phase. Keep evaluations inside the authorized resources; use fixtures or drafts for sends, publishing, deletion, and production changes unless real execution is explicitly authorized.
 
 Before host-sensitive work, read exactly one compatibility guide from `references/compatibility/`: `claudecode.md`, `codex.md`, or `other.md`. Read more than one only when packaging or evaluating the same skill across multiple hosts.
 
@@ -18,8 +24,8 @@ At a high level, the process of creating a skill goes like this:
   - While the runs happen in the background, draft some quantitative evals if there aren't any (if there are some, you can either use as is or modify if you feel something needs to change about them). Then explain them to the user (or if they already existed, explain the ones that already exist)
   - Use the `eval-viewer/generate_review.py` script to show the user the results for them to look at, and also let them look at the quantitative metrics
 - Rewrite the skill based on feedback from the user's evaluation of the results (and also if there are any glaring flaws that become apparent from the quantitative benchmarks)
-- Repeat until you're satisfied
-- Expand the test set and try again at larger scale
+- Repeat when a failure or unresolved concern warrants another change
+- Expand the test set when the change affects behavior not covered by current cases
 
 Your job when using this skill is to figure out where the user is in this process and then jump in and help them progress through these stages. So for instance, maybe they're like "I want to make a skill for X". You can help narrow down what they mean, write a draft, write the test cases, figure out how they want to evaluate, run all the prompts, and repeat.
 
@@ -48,16 +54,16 @@ It's OK to briefly explain terms if you're in doubt, and feel free to clarify te
 
 ### Capture Intent
 
-Start by understanding the user's intent. The current conversation might already contain a workflow the user wants to capture (e.g., they say "turn this into a skill"). If so, extract answers from the conversation history first — the tools used, the sequence of steps, corrections the user made, input/output formats observed. The user may need to fill the gaps, and should confirm before proceeding to the next step.
+Start by understanding the user's intent. Extract the workflow, tools, corrections, inputs, outputs, and boundaries from the current conversation and existing artifacts. Proceed when they are sufficient; ask only about gaps that materially change the skill's behavior or scope.
 
 1. What should this skill enable the agent to do?
 2. When should this skill trigger? (what user phrases/contexts)
 3. What's the expected output format?
-4. Should we set up test cases to verify the skill works? Skills with objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps) benefit from test cases. Skills with subjective outputs (writing style, art) often don't need them. Suggest the appropriate default based on the skill type, but let the user decide.
+4. Which checks would expose a meaningful mistake? Choose validation proportional to the behavioral change. A wording correction need not start a benchmark; changes to authorization or external writes benefit from boundary cases.
 
 ### Interview and Research
 
-Proactively ask questions about edge cases, input/output formats, example files, success criteria, and dependencies. Wait to write test prompts until you've got this part ironed out.
+Inspect relevant examples and dependencies first. Infer reversible defaults and start drafting when the task is clear. Ask about an edge case only when its answer changes the intended behavior; do independent work while that question is pending.
 
 Check available MCPs - if useful for research (searching docs, finding similar skills, looking up best practices), research in parallel via spawn subagents, otherwise inline. Come prepared with context to reduce burden on the user.
 
@@ -66,7 +72,7 @@ Check available MCPs - if useful for research (searching docs, finding similar s
 Based on the user interview, fill in these components:
 
 - **name**: Skill identifier
-- **description**: When to trigger, what it does. This is the primary triggering mechanism - include both what the skill does AND specific contexts for when to use it. All "when to use" info goes here, not in the body. Note: many hosts have a tendency to "undertrigger" skills -- to not use them when they'd be useful. To combat this, make descriptions a little bit pushy, but keep them within the metadata budget: aim for 50-100 words and stay under 1024 characters for Codex-style validators. If the description grows past that, compress the trigger list and move workflow details into the body.
+- **description**: State the capability and specific contexts where it helps. Keep routing precise, including a near-miss boundary when overlap is likely; do not broaden triggers just to increase activation. Stay under 1024 characters for Codex-style validators and move workflow details into the body.
 - **compatibility**: Required tools, dependencies (optional, rarely needed)
 - **the rest of the skill :)**
 
@@ -181,7 +187,7 @@ Before you create files, decide whether this skill is global or project-local.
 - Put the eval workspace next to the skill directory as `<skill-name>-workspace/`.
 - If the user wants a global skill to be discoverable by Codex immediately, also create `~/.codex/skills/<skill-name>` as a symlink to the global skill directory.
 
-Do this before writing any files so all subsequent paths are stable.
+When running a benchmark, establish its workspace before writing benchmark files so subsequent paths are stable. This setup is not required for an ordinary skill edit.
 
 ## Running and evaluating test cases
 
@@ -191,7 +197,7 @@ Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Wi
 
 ### Step 1: Spawn all runs (with-skill AND baseline) in the same turn
 
-For each test case, spawn two subagents in the same turn — one with the skill, one without. This is important: don't spawn the with-skill runs first and then come back for baselines later. Launch everything at once so it all finishes around the same time.
+For each paired test case, run one candidate and one baseline with equivalent inputs, model, and resources. Run pairs concurrently when agent capacity and isolation permit; otherwise use fresh isolated sequential runs and report the scheduling limit. Do not expand concurrency merely to satisfy a fixed count.
 
 **With-skill run:**
 
@@ -266,7 +272,7 @@ Put each with_skill version before its baseline counterpart.
    VIEWER_PID=$!
   ```
    For iteration 2+, also pass `--previous-workspace <workspace>/iteration-<N-1>`.
-   This step is mandatory whenever you produce eval or benchmark results for the user. Do not stop after `benchmark.json` or `benchmark.md`; always give the user a reviewable viewer artifact as well.
+   For a full benchmark, include a reviewable viewer artifact when supported. A focused validation can report its evidence directly. If the viewer is unavailable, return the inspectable outputs and limitation rather than withholding the completed evaluation.
    The viewer expects each run directory to contain an `outputs/` subdirectory. If a lightweight or synthetic benchmark only produced `grading.json` and `timing.json`, create a minimal `outputs/summary.md` (or similar small artifact) before calling `generate_review.py` so the viewer has something to render.
    **Headless environments:** If `webbrowser.open()` is not available or the environment has no display, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Feedback will be downloaded as a `feedback.json` file when the user clicks "Submit All Reviews". After download, copy `feedback.json` into the workspace directory for the next iteration to pick up.
 
@@ -333,16 +339,16 @@ This task is pretty important (we are trying to create billions a year in econom
 After improving the skill:
 
 1. Apply your improvements to the skill
-2. Rerun all test cases into a new `iteration-<N+1>/` directory, including baseline runs. If you're creating a new skill, the baseline is always `without_skill` (no skill) — that stays the same across iterations. If you're improving an existing skill, use your judgment on what makes sense as the baseline: the original version the user came in with, or the previous iteration.
-3. Launch the reviewer with `--previous-workspace` pointing at the previous iteration
-4. Wait for the user to review and tell you they're done
-5. Read the new feedback, improve again, repeat
+2. Rerun affected cases and any shared behavior at risk. Keep the baseline explicit: no skill for a new skill, or an identified prior version for an existing one. Expand to the full suite when the change invalidates its earlier evidence.
+3. For a full benchmark, launch the reviewer with `--previous-workspace` pointing at the previous iteration when supported.
+4. Deliver the result after relevant checks pass. Wait for review only when the user requested a review checkpoint or a remaining decision needs their judgment.
+5. Incorporate feedback when it arrives; do not require a satisfaction response to finish an otherwise completed edit.
 
-Keep going until:
+Finish when:
 
-- The user says they're happy
-- The feedback is all empty (everything looks good)
-- You're not making meaningful progress
+- The requested scope is implemented and relevant validation supports it
+- The user pauses the work
+- A specific dependency prevents further useful progress; preserve and label the partial result
 
 ---
 
@@ -455,7 +461,7 @@ In Claude.ai or another chat-only host, the core workflow is the same (draft →
 
 **Benchmarking**: Skip the quantitative benchmarking — it relies on baseline comparisons which aren't meaningful without subagents. Focus on qualitative feedback from the user.
 
-**The iteration loop**: Same as before — improve the skill, rerun the test cases, ask for feedback — just without the browser reviewer in the middle. You can still organize results into iteration directories on the filesystem if you have one.
+**The iteration loop**: Improve the skill and rerun relevant cases. Deliver the evidence directly when a browser reviewer is unavailable; wait for feedback only if the user requested a checkpoint or a material decision remains. Iteration directories are useful for comparative runs, not required for every edit.
 
 **Description optimization**: This section requires a shell-accessible backend such as `claude` or `codex`. Skip it if your current host doesn't expose one.
 
@@ -477,7 +483,7 @@ If you're in a headless worker host, the main things to know are:
 
 - You have subagents, so the main workflow (spawn test cases in parallel, run baselines, grade, etc.) all works. (However, if you run into severe problems with timeouts, it's OK to run the test prompts in series rather than parallel.)
 - You don't have a browser or display, so when generating the eval viewer, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Then proffer a link that the user can click to open the HTML in their browser.
-- After running tests, always generate the eval viewer for the human to look at examples before revising the skill yourself and trying to make corrections, using `generate_review.py` rather than writing custom HTML. GENERATE THE EVAL VIEWER *BEFORE* evaluating inputs yourself. You want to get them in front of the human ASAP.
+- For a full benchmark, generate the eval viewer with `generate_review.py` when available so the user can inspect examples. Focused checks can be reported directly. Review the evidence and fix clear errors without waiting for an additional user response.
 - If your benchmark is lightweight and a run directory does not yet have `outputs/`, create a minimal artifact such as `outputs/summary.md` first. `generate_review.py` only discovers runs that have an `outputs/` directory.
 - Feedback works differently: since there's no running server, the viewer's "Submit All Reviews" button will download `feedback.json` as a file. You can then read it from there (you may have to request access first).
 - Packaging works — `package_skill.py` just needs Python and a filesystem.
@@ -503,18 +509,4 @@ The references/ directory has additional documentation:
 
 ---
 
-Repeating one more time the core loop here for emphasis:
-
-- Figure out what the skill is about
-- Draft or edit the skill
-- Run test prompts in an agent session that has access to the skill
-- With the user, evaluate the outputs:
-  - Create benchmark.json and run `eval-viewer/generate_review.py` to help the user review them
-  - Hand the user the viewer path or link in the same turn; don't make them ask for it
-- Run quantitative evals
-- Repeat until you and the user are satisfied
-- Package the final skill and return it to the user.
-
-Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. If you're in a headless worker host, please specifically put "Create evals JSON and run `eval-viewer/generate_review.py` so human can review test cases" in your TodoList to make sure it happens.
-
-Good luck!
+Deliver the changed skill and the checks actually performed. Distinguish structural validation, simulated boundary review, and real execution benchmarks; none implies the others. Include a viewer or package when the selected workflow calls for it.
